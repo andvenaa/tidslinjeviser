@@ -1,0 +1,5 @@
+# Aldri sjekk inn posisjonsdata
+*.json
+*.gpx
+*.csv
+*.kml

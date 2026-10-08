@@ -1,0 +1,738 @@
+<!doctype html>
+<html lang="no">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Tidslinjeviser</title>
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
+<style>
+  :root {
+    --bg: #f5f5f2; --panel: #ffffff; --text: #1d1d1f; --muted: #6b6b72; --line: #e2e2de;
+    --accent: #2f6fde; --accent-soft: #e7eefc; --hover: #f2f2ee; --tile-filter: none;
+    --shadow: 0 1px 2px rgba(0,0,0,.06), 0 4px 16px rgba(0,0,0,.05);
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --bg: #131315; --panel: #1b1b1e; --text: #ececef; --muted: #9b9ba4; --line: #2c2c32;
+      --accent: #6d9eff; --accent-soft: #1d2942; --hover: #232328;
+      --tile-filter: invert(1) hue-rotate(180deg) brightness(.85) contrast(.9);
+      --shadow: 0 1px 2px rgba(0,0,0,.4);
+    }
+  }
+  :root[data-theme="dark"] {
+    --bg: #131315; --panel: #1b1b1e; --text: #ececef; --muted: #9b9ba4; --line: #2c2c32;
+    --accent: #6d9eff; --accent-soft: #1d2942; --hover: #232328;
+    --tile-filter: invert(1) hue-rotate(180deg) brightness(.85) contrast(.9);
+    --shadow: 0 1px 2px rgba(0,0,0,.4);
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; height: 100%; }
+  body {
+    background: var(--bg); color: var(--text);
+    font: 14px/1.45 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+    display: grid; grid-template-rows: auto 1fr;
+  }
+  header {
+    display: flex; align-items: center; gap: 12px; flex-wrap: wrap;
+    padding: 10px 16px; background: var(--panel); border-bottom: 1px solid var(--line);
+  }
+  header h1 { font-size: 16px; margin: 0; font-weight: 650; letter-spacing: -.01em; }
+  #status { color: var(--muted); font-size: 13px; flex: 1; min-width: 200px; }
+  .btn {
+    appearance: none; border: 1px solid var(--line); background: var(--panel); color: var(--text);
+    border-radius: 8px; padding: 6px 12px; font: inherit; cursor: pointer; white-space: nowrap;
+  }
+  .btn:hover:not(:disabled) { background: var(--hover); }
+  .btn:disabled { opacity: .4; cursor: default; }
+  .btn.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+  .btn.primary:hover { filter: brightness(1.08); background: var(--accent); }
+  input[type=file] { display: none; }
+
+  main { min-height: 0; display: grid; grid-template-columns: 400px 1fr; }
+  #side { min-height: 0; display: flex; flex-direction: column; border-right: 1px solid var(--line); background: var(--panel); }
+  #tools { padding: 12px 16px; border-bottom: 1px solid var(--line); display: grid; gap: 10px; }
+  .nav { display: flex; gap: 6px; align-items: center; }
+  .nav input[type=date] {
+    flex: 1; min-width: 0; font: inherit; color: var(--text); background: var(--bg);
+    border: 1px solid var(--line); border-radius: 8px; padding: 5px 8px; color-scheme: light dark;
+  }
+  #dayTitle { font-weight: 600; font-size: 15px; text-transform: capitalize; }
+  #daySum { color: var(--muted); font-size: 13px; }
+  .chips { display: flex; flex-wrap: wrap; gap: 6px; }
+  .chip { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; padding: 2px 8px; border-radius: 999px; background: var(--hover); }
+  .chip i { width: 8px; height: 8px; border-radius: 50%; display: inline-block; }
+  .opts { display: flex; flex-wrap: wrap; gap: 6px 12px; align-items: center; font-size: 13px; color: var(--muted); }
+  .opts label { display: inline-flex; gap: 6px; align-items: center; cursor: pointer; }
+  .opts .btn { font-size: 12px; padding: 4px 9px; }
+
+  #list { list-style: none; margin: 0; padding: 6px 0; overflow: auto; flex: 1; }
+  .tag { font-size: 11px; font-weight: 500; color: var(--muted); background: var(--hover); border-radius: 999px; padding: 1px 7px; margin-left: 4px; white-space: nowrap; }
+  .entry .edit { align-self: start; border: 0; background: none; color: var(--muted); cursor: pointer; font-size: 15px; padding: 2px 6px; border-radius: 6px; opacity: 0; }
+  .entry:hover .edit, .entry.active .edit, .entry .edit:focus-visible { opacity: 1; }
+  .entry .edit:hover { background: var(--line); color: var(--text); }
+  @media (hover: none) { .entry .edit { opacity: 1; } }
+  #lkStatus { font-size: 12px; }
+  .entry { display: grid; grid-template-columns: 40px 1fr auto; gap: 4px; padding: 8px 16px 8px 10px; cursor: pointer; }
+  .entry:hover { background: var(--hover); }
+  .entry.active { background: var(--accent-soft); }
+  .rail { display: flex; justify-content: center; }
+  .num {
+    width: 24px; height: 24px; border-radius: 50%; background: var(--accent); color: #fff;
+    font-size: 12px; font-weight: 600; display: grid; place-items: center; margin-top: 1px;
+  }
+  .bar { width: 4px; border-radius: 2px; min-height: 36px; }
+  .title { font-weight: 600; }
+  .meta { color: var(--muted); font-size: 13px; }
+  .sub { color: var(--muted); font-size: 12px; font-variant-numeric: tabular-nums; }
+  .sub a { color: var(--accent); text-decoration: none; }
+  .sub a:hover { text-decoration: underline; }
+  .empty { padding: 24px 16px; color: var(--muted); }
+
+  #mapWrap { position: relative; min-height: 0; }
+  #map { position: absolute; inset: 0; background: var(--bg); }
+  #tileMsg {
+    position: absolute; left: 12px; bottom: 28px; z-index: 1000; max-width: min(460px, calc(100% - 24px));
+    background: var(--panel); color: var(--text); border: 1px solid #e8590c; border-radius: 8px;
+    padding: 8px 12px; font-size: 13px; box-shadow: var(--shadow);
+  }
+  #tileMsg small { display: block; color: var(--muted); word-break: break-all; margin-top: 4px; }
+  .tiles-invert { filter: var(--tile-filter); }
+  .leaflet-control-layers { background: var(--panel); color: var(--text); border-radius: 8px !important; }
+  .leaflet-control-layers-expanded { padding: 8px 12px; font: 13px/1.6 system-ui, sans-serif; }
+  .leaflet-control-layers label { cursor: pointer; }
+  .leaflet-popup-content-wrapper, .leaflet-popup-tip { background: var(--panel); color: var(--text); }
+  .leaflet-popup-content { margin: 10px 14px; font: 13px/1.45 system-ui, sans-serif; }
+  .pin span {
+    width: 24px; height: 24px; border-radius: 50%; background: var(--accent); color: #fff;
+    border: 2px solid #fff; display: grid; place-items: center; font: 600 11px system-ui, sans-serif;
+    box-shadow: 0 1px 4px rgba(0,0,0,.35);
+  }
+
+  #drop {
+    grid-column: 1 / -1; display: grid; place-items: center; padding: 24px 16px;
+  }
+  #drop .card {
+    max-width: 620px; width: 100%; background: var(--panel); border: 2px dashed var(--line);
+    border-radius: 14px; padding: 28px; box-shadow: var(--shadow);
+  }
+  #drop.over .card { border-color: var(--accent); background: var(--accent-soft); }
+  #drop h2 { margin: 0 0 6px; font-size: 20px; letter-spacing: -.01em; }
+  #drop p { color: var(--muted); margin: 6px 0; }
+  #drop ol { padding-left: 20px; margin: 10px 0 18px; }
+  #drop li { margin: 3px 0; }
+  #drop .note { font-size: 12px; margin-top: 16px; }
+  .hidden { display: none !important; }
+
+  @media (max-width: 760px) {
+    body { display: block; }
+    main { display: flex; flex-direction: column-reverse; }
+    #side { border-right: 0; }
+    #list { overflow: visible; }
+    #mapWrap { height: 55vh; }
+  }
+</style>
+</head>
+<body>
+<header>
+  <h1>Tidslinjeviser</h1>
+  <span id="status">Ingen fil lastet</span>
+  <label class="btn primary" for="file">Åpne Timeline.json…</label>
+  <input id="file" type="file" accept=".json,application/json" multiple>
+</header>
+
+<main id="app">
+  <section id="drop">
+    <div class="card">
+      <h2>Slipp tidslinjefilen her</h2>
+      <p>Eller bruk knappen <b>Åpne Timeline.json…</b> øverst.</p>
+      <p><b>Slik eksporterer du fra Android:</b></p>
+      <ol>
+        <li>Åpne <b>Innstillinger</b> på telefonen</li>
+        <li><b>Posisjon → Posisjonstjenester → Tidslinje</b></li>
+        <li><b>Eksporter tidslinjedata</b> og flytt filen til PC-en</li>
+      </ol>
+      <p>Støtter også iPhone-eksport og eldre Google Takeout-filer (<code>Records.json</code> og månedsfilene fra <i>Semantic Location History</i>). Du kan velge flere filer samtidig.</p>
+      <p class="note">Filen leses bare i nettleseren din og lastes ikke opp noe sted. Selve kartbildene hentes fra OpenStreetMap.</p>
+    </div>
+  </section>
+
+  <aside id="side" class="hidden">
+    <div id="tools">
+      <div class="nav">
+        <button class="btn" id="prev" title="Forrige dag med data (←)">◀</button>
+        <input type="date" id="date">
+        <button class="btn" id="next" title="Neste dag med data (→)">▶</button>
+      </div>
+      <div>
+        <div id="dayTitle"></div>
+        <div id="daySum"></div>
+      </div>
+      <div class="chips" id="chips"></div>
+      <div class="opts">
+        <label><input type="checkbox" id="raw"> Rå GPS-punkter</label>
+        <label title="Sender koordinatene til besøkte steder til Esri og Kartverket for å finne navn og adresse. Svarene lagres i nettleseren."><input type="checkbox" id="lookup"> Slå opp stedsnavn</label>
+        <span id="lkStatus"></span>
+        <button class="btn" id="gpx">GPX for dagen</button>
+        <button class="btn" id="csv">CSV (alt)</button>
+      </div>
+    </div>
+    <ul id="list"></ul>
+  </aside>
+  <section id="mapWrap" class="hidden"><div id="map"></div><div id="tileMsg" class="hidden"></div></section>
+</main>
+
+<script>
+const $ = s => document.querySelector(s);
+
+// ---------- Oppslagstabeller ----------
+const GROUP_COLOR = { car: '#e8590c', foot: '#2b8a3e', bike: '#1098ad', transit: '#7048e8', air: '#d6336c', other: '#868e96' };
+const ACT = {
+  IN_PASSENGER_VEHICLE: ['Bil', 'car'], IN_VEHICLE: ['Kjøretøy', 'car'], IN_CAR: ['Bil', 'car'], DRIVING: ['Bil', 'car'],
+  IN_TAXI: ['Taxi', 'car'], MOTORCYCLING: ['Motorsykkel', 'car'],
+  WALKING: ['Gange', 'foot'], ON_FOOT: ['Til fots', 'foot'], RUNNING: ['Løping', 'foot'], HIKING: ['Fottur', 'foot'],
+  CYCLING: ['Sykling', 'bike'], ON_BICYCLE: ['Sykling', 'bike'],
+  IN_BUS: ['Buss', 'transit'], IN_TRAIN: ['Tog', 'transit'], IN_SUBWAY: ['T-bane', 'transit'], IN_TRAM: ['Trikk', 'transit'],
+  IN_FERRY: ['Ferje', 'transit'], IN_CABLECAR: ['Taubane', 'transit'], IN_FUNICULAR: ['Kabelbane', 'transit'],
+  FLYING: ['Fly', 'air'], SAILING: ['Seiling', 'other'], SKIING: ['Ski', 'other'], KAYAKING: ['Kajakk', 'other'],
+  ROWING: ['Roing', 'other'], SURFING: ['Surfing', 'other'], HORSEBACK_RIDING: ['Ridning', 'other'],
+  STILL: ['Stillestående', 'other'], UNKNOWN_ACTIVITY_TYPE: ['Ukjent forflytning', 'other'],
+};
+const SEM = {
+  HOME: 'Hjem', INFERRED_HOME: 'Hjem', WORK: 'Jobb', INFERRED_WORK: 'Jobb',
+  SEARCHED_ADDRESS: 'Søkt adresse', ALIASED_LOCATION: 'Lagret sted',
+};
+const actInfo = a => ACT[a] || [a.replace(/_/g, ' ').toLowerCase().replace(/^\w/, c => c.toUpperCase()), 'other'];
+
+// ---------- Tilstand ----------
+const state = {
+  items: [], path: [], raw: [], places: new Map(), seen: new Set(),
+  dayIndex: new Map(), pathByDay: new Map(), rawByDay: new Map(), days: [], cur: null, view: [], active: null,
+};
+
+// ---------- Hjelpere ----------
+const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+const nf1 = new Intl.NumberFormat('nb-NO', { maximumFractionDigits: 1, minimumFractionDigits: 1 });
+const nf0 = new Intl.NumberFormat('nb-NO');
+
+function LL(v) {
+  if (v == null) return null;
+  if (typeof v === 'object') {
+    let r = null;
+    if (v.latitudeE7 != null && v.longitudeE7 != null) r = [v.latitudeE7 / 1e7, v.longitudeE7 / 1e7];
+    else if (v.latE7 != null && v.lngE7 != null) r = [v.latE7 / 1e7, v.lngE7 / 1e7];
+    else return LL(v.latLng ?? v.LatLng ?? v.point ?? null);
+    return Math.abs(r[0]) <= 90 && Math.abs(r[1]) <= 180 ? r : null;
+  }
+  const m = /(-?\d+(?:\.\d+)?)\s*°?\s*,\s*(-?\d+(?:\.\d+)?)/.exec(String(v).replace(/^geo:/i, ''));
+  if (!m) return null;
+  const a = +m[1], b = +m[2];
+  return Math.abs(a) <= 90 && Math.abs(b) <= 180 ? [a, b] : null;
+}
+
+// Tid -> { ms, off (min), day 'YYYY-MM-DD', hm 'HH:MM' } i stedets lokale tid når offset finnes
+function T(v, offOverride) {
+  if (v == null || v === '') return null;
+  const ms = typeof v === 'number' ? v : (/^\d+$/.test(v) ? +v : Date.parse(v));
+  if (!isFinite(ms)) return null;
+  let off = offOverride;
+  if (off == null) {
+    const m = typeof v === 'string' && /T/.test(v) ? /([+-])(\d{2}):?(\d{2})$/.exec(v) : null;
+    off = m ? (m[1] === '-' ? -1 : 1) * (+m[2] * 60 + +m[3]) : -new Date(ms).getTimezoneOffset();
+  }
+  const iso = new Date(ms + off * 60000).toISOString();
+  return { ms, off, day: iso.slice(0, 10), hm: iso.slice(11, 16) };
+}
+
+function dayRange(a, b) {
+  const out = [a];
+  let d = Date.parse(a + 'T00:00:00Z');
+  const end = Date.parse(b + 'T00:00:00Z');
+  while (d < end && out.length < 60) { d += 864e5; out.push(new Date(d).toISOString().slice(0, 10)); }
+  return out;
+}
+
+const normAct = t => String(t || 'UNKNOWN_ACTIVITY_TYPE').toUpperCase().replace(/[\s-]+/g, '_');
+const normSem = t => String(t || '').toUpperCase().replace(/^TYPE_/, '').replace(/\s+/g, '_');
+
+function hav(a, b) {
+  const R = 6371000, r = Math.PI / 180;
+  const dLat = (b[0] - a[0]) * r, dLng = (b[1] - a[1]) * r;
+  const h = Math.sin(dLat / 2) ** 2 + Math.cos(a[0] * r) * Math.cos(b[0] * r) * Math.sin(dLng / 2) ** 2;
+  return 2 * R * Math.asin(Math.sqrt(h));
+}
+const lineLen = l => l.reduce((s, p, i) => i ? s + hav(l[i - 1], p) : 0, 0);
+
+function fmtDur(ms) {
+  const m = Math.max(0, Math.round(ms / 60000));
+  if (m < 60) return m + ' min';
+  const h = Math.floor(m / 60), r = m % 60;
+  return h + ' t' + (r ? ' ' + r + ' min' : '');
+}
+const fmtT = (t, day) => t.day === day ? t.hm : `${t.day.slice(8, 10)}.${t.day.slice(5, 7)} ${t.hm}`;
+const fmtKm = m => (m < 10000 ? nf1.format(m / 1000) : nf0.format(Math.round(m / 1000))) + ' km';
+
+// ---------- Innlesing ----------
+function addItem(it) {
+  const k = [it.kind, it.s.ms, it.e.ms, it.lat ?? it.start?.[0] ?? ''].join('|');
+  if (state.seen.has(k)) return;
+  state.seen.add(k);
+  state.items.push(it);
+}
+
+function addPath(ll, t) { if (ll && t) state.path.push({ ms: t.ms, day: t.day, lat: ll[0], lng: ll[1], t }); }
+
+function handleSeg(seg) {
+  const s = T(seg.startTime), e = T(seg.endTime || seg.startTime);
+  if (!s || !e) return;
+  if (seg.visit && (seg.visit.hierarchyLevel | 0) === 0) {
+    const v = seg.visit, c = v.topCandidate || {};
+    const ll = LL(c.placeLocation);
+    if (ll) addItem({ kind: 'visit', s, e, lat: ll[0], lng: ll[1], sem: normSem(c.semanticType), placeId: c.placeId, prob: +(c.probability ?? v.probability) || null });
+  }
+  if (seg.activity) {
+    const a = seg.activity, c = a.topCandidate || {};
+    addItem({ kind: 'move', s, e, start: LL(a.start), end: LL(a.end), act: normAct(c.type), dist: +a.distanceMeters || null, prob: +(c.probability ?? a.probability) || null });
+  }
+  if (Array.isArray(seg.timelinePath)) {
+    for (const p of seg.timelinePath) {
+      const t = p.time ? T(p.time)
+        : p.durationMinutesOffsetFromStartTime != null ? T(s.ms + Number(p.durationMinutesOffsetFromStartTime) * 60000, s.off) : null;
+      addPath(LL(p.point), t);
+    }
+  }
+}
+
+function handleOld(o) {
+  if (o.placeVisit) {
+    const p = o.placeVisit, loc = p.location || {}, d = p.duration || {};
+    const s = T(d.startTimestamp || d.startTimestampMs), e = T(d.endTimestamp || d.endTimestampMs), ll = LL(loc);
+    if (s && e && ll) addItem({ kind: 'visit', s, e, lat: ll[0], lng: ll[1], sem: normSem(loc.semanticType), placeId: loc.placeId, name: loc.name, address: loc.address, prob: loc.locationConfidence ? loc.locationConfidence / 100 : null });
+  }
+  if (o.activitySegment) {
+    const a = o.activitySegment, d = a.duration || {};
+    const s = T(d.startTimestamp || d.startTimestampMs), e = T(d.endTimestamp || d.endTimestampMs);
+    if (!s || !e) return;
+    for (const p of a.simplifiedRawPath?.points || []) addPath(LL(p), T(p.timestamp || p.timestampMs));
+    const wp = (a.waypointPath?.waypoints || []).map(LL).filter(Boolean);
+    addItem({ kind: 'move', s, e, start: LL(a.startLocation), end: LL(a.endLocation), act: normAct(a.activityType), dist: +a.distance || +a.waypointPath?.distanceMeters || null, coords: wp.length > 1 ? wp : null });
+  }
+}
+
+function ingest(json) {
+  if (Array.isArray(json)) { json.forEach(seg => seg && seg.startTime && handleSeg(seg)); return 'iPhone-format'; }
+  if (json.semanticSegments) {
+    json.semanticSegments.forEach(handleSeg);
+    for (const sig of json.rawSignals || []) {
+      const p = sig.position; if (!p) continue;
+      const ll = LL(p.LatLng ?? p.latLng), t = T(p.timestamp);
+      if (ll && t) state.raw.push({ ms: t.ms, day: t.day, lat: ll[0], lng: ll[1], acc: p.accuracyMeters });
+    }
+    for (const f of json.userLocationProfile?.frequentPlaces || []) if (f.placeId && f.label) state.places.set(f.placeId, f.label);
+    return 'Android-format';
+  }
+  if (json.timelineObjects) { json.timelineObjects.forEach(handleOld); return 'Takeout (semantisk)'; }
+  if (json.locations) {
+    for (const l of json.locations) {
+      const ll = LL(l), t = T(l.timestamp || l.timestampMs);
+      if (ll && t) state.raw.push({ ms: t.ms, day: t.day, lat: ll[0], lng: ll[1], acc: l.accuracy });
+    }
+    return 'Takeout (Records)';
+  }
+  throw new Error('ukjent filformat');
+}
+
+function finalize() {
+  state.items.sort((a, b) => a.s.ms - b.s.ms);
+  state.path.sort((a, b) => a.ms - b.ms);
+  state.raw.sort((a, b) => a.ms - b.ms);
+  const group = (arr, key) => { const m = new Map(); for (const x of arr) { let g = m.get(x[key]); if (!g) m.set(x[key], g = []); g.push(x); } return m; };
+  state.dayIndex = new Map();
+  for (const it of state.items) for (const d of dayRange(it.s.day, it.e.day)) {
+    let g = state.dayIndex.get(d); if (!g) state.dayIndex.set(d, g = []); g.push(it);
+  }
+  state.pathByDay = group(state.path, 'day');
+  state.rawByDay = group(state.raw, 'day');
+  state.days = [...new Set([...state.dayIndex.keys(), ...state.pathByDay.keys(), ...state.rawByDay.keys()])].sort();
+}
+
+async function loadFiles(files) {
+  const status = $('#status');
+  const notes = [];
+  for (const f of files) {
+    try {
+      status.textContent = `Leser ${f.name} (${nf1.format(f.size / 1048576)} MB)…`;
+      await new Promise(r => setTimeout(r, 30));
+      const json = JSON.parse(await f.text());
+      status.textContent = `Tolker ${f.name}…`;
+      await new Promise(r => setTimeout(r, 30));
+      notes.push(`${f.name}: ${ingest(json)}`);
+    } catch (err) {
+      notes.push(`${f.name}: kunne ikke leses (${err.message})`);
+    }
+  }
+  finalize();
+  if (!state.days.length) { status.textContent = notes.join(' · ') + ' – fant ingen posisjonsdata.'; return; }
+  const visits = state.items.filter(i => i.kind === 'visit').length;
+  const moves = state.items.length - visits;
+  status.textContent = `${nf0.format(state.days.length)} dager (${state.days[0]} – ${state.days.at(-1)}) · ${nf0.format(visits)} besøk · ${nf0.format(moves)} forflytninger` +
+    (state.raw.length ? ` · ${nf0.format(state.raw.length)} GPS-punkter` : '') + `  —  ${notes.join(' · ')}`;
+  startUI();
+}
+
+// ---------- Kart og visning ----------
+let map, layer, canvas;
+function startUI() {
+  $('#drop').classList.add('hidden');
+  $('#side').classList.remove('hidden');
+  $('#mapWrap').classList.remove('hidden');
+  if (!map) {
+    map = L.map('map', { maxZoom: 19 });
+    const bases = makeBaseLayers();
+    const dark = matchMedia('(prefers-color-scheme: dark)').matches;
+    let chosen = null;
+    try { chosen = localStorage.getItem('tidslinje.kart'); } catch (e) {}
+    (bases[chosen] || bases[dark ? 'Mørk grå (Esri)' : 'Gatekart (Esri)']).addTo(map);
+    L.control.layers(bases, null, { position: 'topright', collapsed: true }).addTo(map);
+    map.on('baselayerchange', e => { try { localStorage.setItem('tidslinje.kart', e.name); } catch (err) {} });
+    watchTiles(bases);
+    layer = L.layerGroup().addTo(map);
+    canvas = L.canvas({ padding: .3 });
+    map.setView([60, 10], 5);
+  }
+  const d = $('#date');
+  d.min = state.days[0]; d.max = state.days.at(-1);
+  setTimeout(() => { map.invalidateSize(); showDay(state.cur && state.days.includes(state.cur) ? state.cur : state.days.at(-1)); }, 0);
+}
+
+function makeBaseLayers() {
+  const osm = '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>-bidragsytere';
+  const kv = '&copy; <a href="https://www.kartverket.no/">Kartverket</a>';
+  const esri = 'Bilder &copy; Esri, Maxar, Earthstar Geographics';
+  const esriMap = 'Kart &copy; Esri, HERE, Garmin, &copy; OpenStreetMap-bidragsytere';
+  const t = (url, o) => L.tileLayer(url, { maxZoom: 19, ...o });
+  const esriUrl = s => `https://server.arcgisonline.com/ArcGIS/rest/services/${s}/MapServer/tile/{z}/{y}/{x}`;
+  return {
+    'Gatekart (Esri)': t(esriUrl('World_Street_Map'), { maxNativeZoom: 18, attribution: esriMap }),
+    'Topografisk (Esri)': t(esriUrl('World_Topo_Map'), { maxNativeZoom: 18, attribution: esriMap }),
+    'Lys grå (Esri)': L.layerGroup([
+      t(esriUrl('Canvas/World_Light_Gray_Base'), { maxNativeZoom: 16, attribution: esriMap }),
+      t(esriUrl('Canvas/World_Light_Gray_Reference'), { maxNativeZoom: 16 }),
+    ]),
+    'Mørk grå (Esri)': L.layerGroup([
+      t(esriUrl('Canvas/World_Dark_Gray_Base'), { maxNativeZoom: 16, attribution: esriMap }),
+      t(esriUrl('Canvas/World_Dark_Gray_Reference'), { maxNativeZoom: 16 }),
+    ]),
+    'Kartverket topo': t('https://cache.kartverket.no/v1/wmts/1.0.0/topo/default/webmercator/{z}/{y}/{x}.png', { maxNativeZoom: 18, attribution: kv }),
+    'Kartverket gråtone': t('https://cache.kartverket.no/v1/wmts/1.0.0/topograatone/default/webmercator/{z}/{y}/{x}.png', { maxNativeZoom: 18, attribution: kv }),
+    'Kartverket mørk': t('https://cache.kartverket.no/v1/wmts/1.0.0/topograatone/default/webmercator/{z}/{y}/{x}.png', { maxNativeZoom: 18, attribution: kv, className: 'tiles-invert' }),
+    'Satellitt (Esri)': t(esriUrl('World_Imagery'), { maxNativeZoom: 18, attribution: esri }),
+    'Satellitt med navn': L.layerGroup([
+      t(esriUrl('World_Imagery'), { maxNativeZoom: 18, attribution: esri }),
+      t(esriUrl('Reference/World_Boundaries_and_Places'), { maxNativeZoom: 18 }),
+    ]),
+    'Terreng (OpenTopoMap)': t('https://{s}.tile.opentopomap.org/{z}/{x}/{y}.png', { maxNativeZoom: 17, attribution: osm + ', SRTM | &copy; <a href="https://opentopomap.org">OpenTopoMap</a>' }),
+  };
+}
+
+// Viser en melding i kartet hvis bakgrunnskartet ikke får lastet fliser
+function watchTiles(bases) {
+  const box = $('#tileMsg');
+  for (const [name, base] of Object.entries(bases)) {
+    const tiles = base instanceof L.TileLayer ? [base] : base.getLayers();
+    for (const tl of tiles) {
+      let ok = 0, bad = 0, timer;
+      tl.on('loading', () => { ok = bad = 0; box.classList.add('hidden'); });
+      tl.on('tileload', () => ok++);
+      tl.on('tileerror', e => {
+        bad++;
+        clearTimeout(timer);
+        timer = setTimeout(() => {
+          if (!map.hasLayer(tl) || ok > 0) return;
+          box.innerHTML = `Kartlaget «${esc(name)}» kunne ikke lastes (${bad} feil). Prøv et annet kartlag, ` +
+            `eller åpne filen direkte i Chrome/Edge. <small>Eksempel på adresse som feilet: ${esc(e.tile?.src || '')}</small>`;
+          box.classList.remove('hidden');
+        }, 800);
+      });
+    }
+  }
+}
+
+const prevDay = d => { let r = null; for (const x of state.days) { if (x < d) r = x; else break; } return r; };
+const nextDay = d => state.days.find(x => x > d) || null;
+
+function lowerBound(arr, ms) { let lo = 0, hi = arr.length; while (lo < hi) { const m = (lo + hi) >> 1; if (arr[m].ms < ms) lo = m + 1; else hi = m; } return lo; }
+
+function moveLine(m) {
+  if (m.coords) return m.coords;
+  const line = [];
+  if (m.start) line.push(m.start);
+  for (let i = lowerBound(state.path, m.s.ms); i < state.path.length && state.path[i].ms <= m.e.ms; i++) line.push([state.path[i].lat, state.path[i].lng]);
+  if (m.end) line.push(m.end);
+  return line;
+}
+
+// ---------- Stedsnavn: egne navn og automatisk oppslag ----------
+const store = {
+  get(k, d) { try { return JSON.parse(localStorage.getItem(k)) ?? d; } catch (e) { return d; } },
+  set(k, v) { try { localStorage.setItem(k, JSON.stringify(v)); } catch (e) {} },
+};
+const ownNames = store.get('tidslinje.navn', {});
+const lookups = store.get('tidslinje.oppslag', {});
+const placeKey = v => v.placeId || `${v.lat.toFixed(4)},${v.lng.toFixed(4)}`;
+const titleCase = s => String(s || '').toLowerCase().replace(/(^|[\s-])\p{L}/gu, c => c.toUpperCase());
+
+function visitInfo(v) {
+  const key = placeKey(v), own = ownNames[key], lk = lookups[key] || {};
+  const semKey = SEM[v.sem] ? v.sem : normSem(state.places.get(v.placeId));
+  const sem = SEM[semKey] || null;
+  const homeWork = /HOME|WORK/.test(semKey);
+  const title = own || v.name || (homeWork && sem) || lk.poi || lk.address || sem || 'Besøk';
+  const auto = !own && !v.name && !(homeWork && sem) && (title === lk.poi || title === lk.address);
+  const tags = [];
+  if (sem && title !== sem) tags.push(sem);
+  if (auto) tags.push('automatisk');
+  const address = v.address || lk.address || null;
+  return { key, title, tags, auto, own, address: address !== title ? address : null };
+}
+const visitLabel = v => visitInfo(v).title;
+
+async function lookupPlace(v) {
+  const key = placeKey(v);
+  if (lookups[key]) return false;
+  const [esri, geo] = await Promise.allSettled([
+    fetch(`https://geocode.arcgis.com/arcgis/rest/services/World/GeocodeServer/reverseGeocode?f=json&langCode=NO&location=${v.lng},${v.lat}`).then(r => r.json()),
+    fetch(`https://ws.geonorge.no/adresser/v1/punktsok?lat=${v.lat}&lon=${v.lng}&radius=150&treffPerSide=10`).then(r => r.json()),
+  ]);
+  if (esri.status === 'rejected' && geo.status === 'rejected') return false;
+  const r = {};
+  const a = esri.value?.address;
+  if (a) {
+    if (a.Addr_type === 'POI' && a.PlaceName) { r.poi = a.PlaceName; r.poiType = a.Type; }
+    r.address = [a.Address, [a.Postal, a.City].filter(Boolean).join(' ')].filter(Boolean).join(', ') || a.LongLabel || undefined;
+  }
+  const hits = geo.value?.adresser || [];
+  if (hits.length) {
+    const h = hits.reduce((b, x) => (x.meterDistanseTilPunkt ?? 1e9) < (b.meterDistanseTilPunkt ?? 1e9) ? x : b);
+    r.address = `${h.adressetekst}, ${h.postnummer} ${titleCase(h.poststed)}`;
+  }
+  lookups[key] = r;
+  store.set('tidslinje.oppslag', lookups);
+  return true;
+}
+
+let lookupRun = 0;
+async function lookupDay(day) {
+  const run = ++lookupRun;
+  const seen = new Set();
+  const todo = (state.dayIndex.get(day) || []).filter(i => {
+    if (i.kind !== 'visit' || i.name) return false;
+    const k = placeKey(i);
+    if (lookups[k] || ownNames[k] || seen.has(k)) return false;
+    seen.add(k); return true;
+  });
+  if (!todo.length) return;
+  const st = $('#lkStatus');
+  let changed = false, n = 0;
+  for (const v of todo) {
+    if (run !== lookupRun) return;
+    st.textContent = `Slår opp steder… ${++n}/${todo.length}`;
+    try { changed = (await lookupPlace(v)) || changed; } catch (e) {}
+    await new Promise(r => setTimeout(r, 120));
+  }
+  if (run !== lookupRun) return;
+  st.textContent = '';
+  if (changed && state.cur === day) showDay(day, true);
+}
+
+function renamePlace(v) {
+  const info = visitInfo(v);
+  const val = prompt('Navn på dette stedet (gjelder alle besøk her).\nLa feltet stå tomt for å fjerne ditt eget navn.', info.own || (info.title === 'Besøk' ? '' : info.title));
+  if (val === null) return;
+  if (val.trim()) ownNames[info.key] = val.trim(); else delete ownNames[info.key];
+  store.set('tidslinje.navn', ownNames);
+  showDay(state.cur, true);
+}
+function mapsLink(v) {
+  return v.placeId
+    ? `https://www.google.com/maps/search/?api=1&query=${v.lat},${v.lng}&query_place_id=${encodeURIComponent(v.placeId)}`
+    : `https://www.google.com/maps/search/?api=1&query=${v.lat},${v.lng}`;
+}
+
+function showDay(day, keep = false) {
+  if (!keep) { lookupRun++; $('#lkStatus').textContent = ''; }
+  const scroll = $('#list').scrollTop;
+  state.cur = day; state.active = null;
+  $('#date').value = day;
+  $('#prev').disabled = !prevDay(day);
+  $('#next').disabled = !nextDay(day);
+  $('#dayTitle').textContent = new Date(day + 'T12:00:00').toLocaleDateString('nb-NO', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' });
+
+  layer.clearLayers();
+  const list = $('#list'); list.innerHTML = '';
+  const items = state.dayIndex.get(day) || [];
+  const all = [];
+  state.view = [];
+
+  const dp = state.pathByDay.get(day) || [];
+  if (dp.length > 1) {
+    const ll = dp.map(p => [p.lat, p.lng]);
+    L.polyline(ll, { color: '#8a8a92', weight: 3, opacity: .45, interactive: false }).addTo(layer);
+    all.push(...ll);
+  }
+  const raw = state.rawByDay.get(day) || [];
+  if ($('#raw').checked) for (const r of raw) {
+    L.circleMarker([r.lat, r.lng], { renderer: canvas, radius: 3, stroke: false, fillColor: '#d6336c', fillOpacity: .55 })
+      .bindTooltip(T(r.ms).hm + (r.acc ? ` · ±${Math.round(r.acc)} m` : '')).addTo(layer);
+    all.push([r.lat, r.lng]);
+  }
+  if (!items.length && !dp.length && raw.length > 1) {
+    const ll = raw.map(p => [p.lat, p.lng]);
+    L.polyline(ll, { color: '#2f6fde', weight: 3, opacity: .7, interactive: false }).addTo(layer);
+    all.push(...ll);
+  }
+
+  let vn = 0, distTot = 0;
+  const groups = {};
+  items.forEach((it, i) => {
+    const li = document.createElement('li');
+    li.className = 'entry';
+    const time = `${fmtT(it.s, day)} – ${fmtT(it.e, day)} · ${fmtDur(it.e.ms - it.s.ms)}`;
+    let lyr, popup;
+    if (it.kind === 'visit') {
+      vn++;
+      const info = visitInfo(it);
+      const tags = info.tags.map(t => ` <span class="tag">${esc(t)}</span>`).join('');
+      lyr = L.marker([it.lat, it.lng], { icon: L.divIcon({ className: 'pin', html: `<span>${vn}</span>`, iconSize: [24, 24], iconAnchor: [12, 12] }) });
+      popup = `<b>${vn}. ${esc(info.title)}</b><br>${esc(time)}${info.address ? '<br>' + esc(info.address) : ''}`;
+      li.innerHTML = `<div class="rail"><span class="num">${vn}</span></div>
+        <div><div class="title"${info.auto ? ' title="Navnet er slått opp automatisk og kan være unøyaktig"' : ''}>${esc(info.title)}${tags}</div><div class="meta">${esc(time)}</div>
+        <div class="sub">${info.address ? esc(info.address) + '<br>' : ''}${it.lat.toFixed(5)}, ${it.lng.toFixed(5)} · <a href="${mapsLink(it)}" target="_blank" rel="noopener">Google Maps ↗</a></div></div>
+        <button class="edit" title="Gi stedet et eget navn">✎</button>`;
+      li.querySelector('.edit').onclick = e => { e.stopPropagation(); renamePlace(it); };
+      li.querySelector('a').onclick = e => e.stopPropagation();
+      all.push([it.lat, it.lng]);
+    } else {
+      const [label, g] = actInfo(it.act);
+      const color = GROUP_COLOR[g];
+      const line = moveLine(it);
+      const dist = it.dist ?? (line.length > 1 ? lineLen(line) : 0);
+      distTot += dist;
+      const G = groups[label] ||= { dist: 0, ms: 0, color };
+      G.dist += dist; G.ms += it.e.ms - it.s.ms;
+      const distTxt = dist ? ' · ' + fmtKm(dist) : '';
+      if (line.length > 1) { lyr = L.polyline(line, { color, weight: 5, opacity: .85 }); all.push(...line); }
+      popup = `<b>${esc(label)}</b>${esc(distTxt)}<br>${esc(time)}`;
+      li.innerHTML = `<div class="rail"><span class="bar" style="background:${color}"></span></div>
+        <div><div class="title">${esc(label)}${esc(distTxt)}</div><div class="meta">${esc(time)}</div>
+        ${it.prob ? `<div class="sub">Sikkerhet ${Math.round(it.prob * 100)} %</div>` : ''}</div>`;
+    }
+    if (lyr) { lyr.bindPopup(popup).addTo(layer); lyr.on('click', () => focusItem(i, false)); }
+    li.onclick = () => focusItem(i, true);
+    list.appendChild(li);
+    state.view.push({ it, li, lyr });
+  });
+
+  if (!list.children.length) {
+    list.innerHTML = `<li class="empty">${raw.length || dp.length ? 'Ingen besøk eller forflytninger registrert, bare GPS-spor.' : 'Ingen registreringer denne dagen.'}</li>`;
+  }
+
+  const parts = [];
+  if (vn) parts.push(`${vn} ${vn === 1 ? 'sted' : 'steder'}`);
+  if (distTot) parts.push(fmtKm(distTot) + ' totalt');
+  if (raw.length) parts.push(`${nf0.format(raw.length)} GPS-punkter`);
+  $('#daySum').textContent = parts.join(' · ') || ' ';
+  $('#chips').innerHTML = Object.entries(groups).sort((a, b) => b[1].dist - a[1].dist)
+    .map(([k, g]) => `<span class="chip"><i style="background:${g.color}"></i>${esc(k)} ${g.dist ? fmtKm(g.dist) + ', ' : ''}${fmtDur(g.ms)}</span>`).join('');
+
+  if (keep) list.scrollTop = scroll;
+  else if (all.length) map.fitBounds(L.latLngBounds(all).pad(.08), { maxZoom: 16 });
+  if (!keep && $('#lookup').checked) lookupDay(day);
+}
+
+function focusItem(i, fromList) {
+  const v = state.view[i]; if (!v) return;
+  if (state.active != null) {
+    const p = state.view[state.active];
+    p.li.classList.remove('active');
+    if (p.lyr && p.lyr.setStyle) p.lyr.setStyle({ weight: 5, opacity: .85 });
+  }
+  state.active = i;
+  v.li.classList.add('active');
+  if (!fromList) v.li.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+  if (!v.lyr) return;
+  if (v.lyr.setStyle) {
+    v.lyr.setStyle({ weight: 8, opacity: 1 }).bringToFront();
+    if (fromList) map.fitBounds(v.lyr.getBounds().pad(.2), { maxZoom: 17 });
+  } else if (fromList) {
+    map.setView(v.lyr.getLatLng(), Math.max(map.getZoom(), 15));
+  }
+  if (fromList) v.lyr.openPopup();
+}
+
+// ---------- Eksport ----------
+function download(name, text, type) {
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(new Blob([text], { type }));
+  a.download = name;
+  document.body.appendChild(a); a.click(); a.remove();
+  setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+}
+
+function exportGpx() {
+  const day = state.cur; if (!day) return;
+  const items = state.dayIndex.get(day) || [];
+  const x = s => esc(s);
+  let out = `<?xml version="1.0" encoding="UTF-8"?>\n<gpx version="1.1" creator="Tidslinjeviser" xmlns="http://www.topografix.com/GPX/1/1">\n`;
+  items.filter(i => i.kind === 'visit').forEach((v, n) =>
+    out += `  <wpt lat="${v.lat}" lon="${v.lng}"><time>${new Date(v.s.ms).toISOString()}</time><name>${n + 1}. ${x(visitLabel(v))}</name><desc>${x(v.s.hm + '–' + v.e.hm)}</desc></wpt>\n`);
+  let pts = (state.pathByDay.get(day) || []).map(p => [p.lat, p.lng, p.ms]);
+  if (!pts.length) pts = (state.rawByDay.get(day) || []).map(p => [p.lat, p.lng, p.ms]);
+  if (!pts.length) items.filter(i => i.kind === 'move').forEach(m => moveLine(m).forEach(p => pts.push([p[0], p[1], null])));
+  out += `  <trk><name>${day}</name><trkseg>\n`;
+  for (const [la, ln, ms] of pts) out += `    <trkpt lat="${la}" lon="${ln}">${ms ? `<time>${new Date(ms).toISOString()}</time>` : ''}</trkpt>\n`;
+  out += `  </trkseg></trk>\n</gpx>\n`;
+  download(`tidslinje-${day}.gpx`, out, 'application/gpx+xml');
+}
+
+function exportCsv() {
+  const num = (n, d = 6) => n == null || n === '' ? '' : String(+(+n).toFixed(d)).replace('.', ',');
+  const q = s => { s = String(s ?? ''); return /[;"\n]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s; };
+  const rows = [['Type', 'Dato', 'Start', 'Slutt', 'Varighet (min)', 'Beskrivelse', 'Breddegrad', 'Lengdegrad', 'Slutt breddegrad', 'Slutt lengdegrad', 'Distanse (km)', 'Sikkerhet', 'Adresse', 'Place ID']];
+  for (const it of state.items) {
+    const dur = Math.round((it.e.ms - it.s.ms) / 60000);
+    const st = `${it.s.day} ${it.s.hm}`, en = `${it.e.day} ${it.e.hm}`;
+    if (it.kind === 'visit') {
+      const info = visitInfo(it);
+      rows.push(['Besøk', it.s.day, st, en, dur, info.title, num(it.lat), num(it.lng), '', '', '', num(it.prob, 2), info.address || '', it.placeId || '']);
+    } else {
+      const line = moveLine(it), a = line[0], b = line.at(-1);
+      const dist = it.dist ?? (line.length > 1 ? lineLen(line) : null);
+      rows.push(['Forflytning', it.s.day, st, en, dur, actInfo(it.act)[0], num(a?.[0]), num(a?.[1]), num(b?.[0]), num(b?.[1]), dist == null ? '' : num(dist / 1000, 2), num(it.prob, 2), '', '']);
+    }
+  }
+  download('tidslinje.csv', '﻿' + rows.map(r => r.map(q).join(';')).join('\r\n'), 'text/csv;charset=utf-8');
+}
+
+// ---------- Hendelser ----------
+$('#file').addEventListener('change', e => { if (e.target.files.length) loadFiles([...e.target.files]); e.target.value = ''; });
+$('#prev').onclick = () => { const d = prevDay(state.cur); if (d) showDay(d); };
+$('#next').onclick = () => { const d = nextDay(state.cur); if (d) showDay(d); };
+$('#date').onchange = e => { if (e.target.value) showDay(e.target.value); };
+$('#raw').onchange = () => state.cur && showDay(state.cur);
+$('#lookup').checked = store.get('tidslinje.oppslagPå', false);
+$('#lookup').onchange = e => { store.set('tidslinje.oppslagPå', e.target.checked); if (e.target.checked && state.cur) lookupDay(state.cur); };
+$('#gpx').onclick = exportGpx;
+$('#csv').onclick = exportCsv;
+document.addEventListener('keydown', e => {
+  if (!state.cur || e.target.matches('input, textarea, select')) return;
+  if (e.key === 'ArrowLeft') $('#prev').click();
+  if (e.key === 'ArrowRight') $('#next').click();
+});
+const drop = $('#drop');
+['dragenter', 'dragover'].forEach(t => window.addEventListener(t, e => { e.preventDefault(); drop.classList.add('over'); }));
+['dragleave', 'drop'].forEach(t => window.addEventListener(t, e => { e.preventDefault(); if (t === 'drop' || e.target === document.documentElement) drop.classList.remove('over'); }));
+window.addEventListener('drop', e => { const f = [...(e.dataTransfer?.files || [])]; if (f.length) loadFiles(f); });
+</script>
+</body>
+</html>
